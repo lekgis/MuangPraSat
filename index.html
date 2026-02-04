@@ -1042,14 +1042,14 @@
 
         // ข้อ 3: ตั้งค่าป๊อปอัปเพื่อเปิดฟอร์ม (แก้ไขเพิ่มปุ่มลบ + แก้ไขป๊อบอัปไม่ปิดอัตโนมัติ)
         function setupMarkerPopup(marker, data, type) {
-          const popupDiv = document.createElement('div');
-          popupDiv.className = "p-1 min-w-[160px]";
-          popupDiv.innerHTML = `
+            const popupDiv = document.createElement('div');
+            popupDiv.className = "p-1 min-w-[160px]";
+            popupDiv.innerHTML = `
             <p class="font-bold text-sm text-blue-900">${type === 'building' ? 'สิ่งปลูกสร้าง' : 'ป้าย'}</p>
             <p class="text-[10px] text-gray-500">${data.lat_long}</p>
-            <div class="mt-2 space-y-1">
-              <button class="w-full bg-blue-600 text-white text-[11px] py-2 rounded font-bold shadow-sm active:bg-blue-700">แก้ข้อมูล</button>
-              <button class="w-full bg-red-600 text-white text-[11px] py-2 rounded font-bold shadow-sm active:bg-red-700">ลบจุด</button>
+            <div class="mt-2 space-y-2">  <!-- เพิ่มระยะห่างระหว่างปุ่ม -->
+                <button class="w-full bg-blue-600 text-white text-[11px] py-3 rounded font-bold shadow-sm active:bg-blue-700 hover:bg-blue-700 transition">แก้ข้อมูล</button>
+                <button class="w-full bg-red-600 text-white text-[11px] py-3 rounded font-bold shadow-sm active:bg-red-700 hover:bg-red-700 transition">ลบจุด</button>
             </div>
           `;
           
@@ -1487,7 +1487,7 @@
             // ปิดอัตโนมัติหลัง 3 วินาที
             setTimeout(() => {
                 closeEditModeModal();
-            }, 3000);
+            }, 4000);
         }
 
         // ปิดหน้าต่างโหมดแก้ไข
@@ -2147,6 +2147,7 @@
                 console.error("Error loading data:", e);
             }
         }
+
         // ============================================
         // Offline Data Storage System
         // ============================================
@@ -2924,48 +2925,63 @@
             return marker;
         }
 
-        // ฟังก์ชันโหลดมาร์กเกอร์เฉพาะที่มองเห็น
-        function loadVisibleMarkers() {
-            const bounds = map.getBounds();
-            const visibleMarkers = [];
-            
-            // ล้างมาร์กเกอร์ทั้งหมด
-            if (markerCluster) {
-                markerCluster.clearLayers();
-            } else {
-                surveyLayers.clearLayers();
-            }
-            
-            // โหลดเฉพาะมาร์กเกอร์ที่อยู่ในขอบเขตที่มองเห็น
-            allBuildings.forEach(r => {
-                if (!r.lat_long) return;
-                const coords = r.lat_long.split(',').map(Number);
-                if (coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) return;
-                
-                const latLng = L.latLng(coords[0], coords[1]);
-                
-                // ตรวจสอบว่าอยู่ในขอบเขตที่มองเห็นหรือไม่
-                if (bounds.contains(latLng)) {
-                    const m = createCircleMarker(latLng, 'building', isEditMode);
-                    setupMarkerPopup(m, r, 'building');
-                    if (isEditMode) enableMarkerDragging(m, r);
-                }
-            });
-            
-            allSigns.forEach(r => {
-                if (!r.lat_long) return;
-                const coords = r.lat_long.split(',').map(Number);
-                if (coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) return;
-                
-                const latLng = L.latLng(coords[0], coords[1]);
-                
-                if (bounds.contains(latLng)) {
-                    const m = createCircleMarker(latLng, 'sign', isEditMode);
-                    setupMarkerPopup(m, r, 'sign');
-                    if (isEditMode) enableMarkerDragging(m, r);
-                }
-            });
+// ฟังก์ชันโหลดมาร์กเกอร์เฉพาะที่มองเห็น + buffer
+function loadVisibleMarkers() {
+    const bounds = map.getBounds();
+    const visibleMarkers = [];
+    
+    // ✅ เพิ่ม Buffer Zone รอบขอบเขตที่มองเห็น
+    const bufferRatio = isMobile() ? 0.5 : 1.0; // มือถือ 50%, คอม 100%
+    const bufferedBounds = bounds.pad(bufferRatio);
+    
+    // ล้างมาร์กเกอร์ทั้งหมด
+    if (markerCluster) {
+        markerCluster.clearLayers();
+    } else {
+        surveyLayers.clearLayers();
+    }
+    
+    // โหลดเฉพาะมาร์กเกอร์ที่อยู่ในขอบเขต + buffer
+    allBuildings.forEach(r => {
+        if (!r.lat_long) return;
+        const coords = r.lat_long.split(',').map(Number);
+        if (coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) return;
+        const latLng = L.latLng(coords[0], coords[1]);
+        
+        // ✅ ตรวจสอบว่าอยู่ในขอบเขต + buffer
+        if (!bufferedBounds.contains(latLng)) return;
+        
+        const m = createCircleMarker(latLng, 'building', isEditMode);
+        setupMarkerPopup(m, r, 'building');
+        if (isEditMode) enableMarkerDragging(m, r);
+        
+        if (markerCluster) {
+            markerCluster.addLayer(m);
+        } else {
+            m.addTo(surveyLayers);
         }
+    });
+    
+    allSigns.forEach(r => {
+        if (!r.lat_long) return;
+        const coords = r.lat_long.split(',').map(Number);
+        if (coords.length < 2 || isNaN(coords[0]) || isNaN(coords[1])) return;
+        const latLng = L.latLng(coords[0], coords[1]);
+        
+        // ✅ ตรวจสอบว่าอยู่ในขอบเขต + buffer
+        if (!bufferedBounds.contains(latLng)) return;
+        
+        const m = createCircleMarker(latLng, 'sign', isEditMode);
+        setupMarkerPopup(m, r, 'sign');
+        if (isEditMode) enableMarkerDragging(m, r);
+        
+        if (markerCluster) {
+            markerCluster.addLayer(m);
+        } else {
+            m.addTo(surveyLayers);
+        }
+    });
+}
 
         // เรียกใช้เมื่อเลื่อนหรือซูมแผนที่
         map.on('moveend', loadVisibleMarkers);
